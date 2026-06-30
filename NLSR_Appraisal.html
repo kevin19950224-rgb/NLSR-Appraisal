@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>nasi lemak shop. · Performance Appraisal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;padding:0;background:#FAF6F0;font-family:system-ui,-apple-system,sans-serif;}
+  input,textarea,button{font-family:inherit;}
+  textarea{resize:none;}
+  .scrollable{overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  input[type=date]::-webkit-calendar-picker-indicator{opacity:0.5;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect} = React;
+
+const B={red:"#8B1A1A",crimson:"#C0392B",cream:"#FAF6F0",kraft:"#F0E6D3",brown:"#6B4226",muted:"#9B8878",border:"#E8DDD2"};
+const SAVE_KEY="nlsr_appraisal_v2";
+const ADMIN_PIN="8888";
+
+// ── Live Google Sheets settings ───────────────────────────────────────────────
+const SETTINGS_CSV="https://docs.google.com/spreadsheets/d/e/2PACX-1vQOOBz6TBkHgyaWRXg9yGBe3iJ5CgrfQQVBqv2cgRt4B4ufLvgccPDQFyXhh0J8JWaIKmB17Tis9SlW/pub?gid=525469391&single=true&output=csv";
+
+function parseCSV(text){
+  return text.trim().split("\n").map(row=>{
+    const cells=[];let cur="";let inQ=false;
+    for(let i=0;i<row.length;i++){
+      const ch=row[i];
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===","&&!inQ){cells.push(cur.trim());cur="";}
+      else{cur+=ch;}
+    }
+    cells.push(cur.trim());
+    return cells;
+  });
+}
+
+function extractTable(rows,startCol,keys){
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    const obj={};let hasData=false;
+    keys.forEach((k,i)=>{const v=(row[startCol+i]||"").trim();obj[k]=v;if(v)hasData=true;});
+    if(hasData)out.push(obj);
+  }
+  return out;
+}
+
+// Fallback if Google Sheets unreachable — reflects your real data
+const FB_OUTLETS=[
+  {code:"NLSR-J1",name:"Nasi Lemak Shop Jaya One",brand:"Nasi Lemak Shop",status:"Active"},
+];
+const FB_APPRAISERS=[
+  {name:"Grace",outletCode:"NLSR-J1",status:"Active"},
+];
+
+const RC=[
+  {value:1,icon:"🌱",en:"Needs Help",bm:"Perlu Bantuan",bg:"#FFF5F5",border:"#FECACA",selBorder:"#F87171",selRing:"rgba(248,113,113,0.25)",text:"#B91C1C",bbg:"#FEE2E2",btxt:"#B91C1C"},
+  {value:2,icon:"🌳",en:"On Track",bm:"Pada Landasan",bg:"#F0FDF4",border:"#BBF7D0",selBorder:"#4ADE80",selRing:"rgba(74,222,128,0.25)",text:"#15803D",bbg:"#DCFCE7",btxt:"#15803D"},
+  {value:3,icon:"⭐",en:"Superstar",bm:"Superstar",bg:"#FFFBEB",border:"#FDE68A",selBorder:"#FBBF24",selRing:"rgba(251,191,36,0.25)",text:"#92400E",bbg:"#FEF3C7",btxt:"#92400E"},
+];
+
+const KPI={
+  NE1:{label:"Service / Kitchen Crew",sections:[{title:"Performance",isOp:false,criteria:[
+    {id:"jk",en:"Job Knowledge",bm:"Pengetahuan Kerja",w:0.2,d:{en:["Lacks basic menu, recipe, and daily procedure knowledge. Hygiene and service standards are inconsistent.","Understands the menu, recipes, and standard procedures. Works with minimal supervision with consistent quality.","Strong understanding of menu and operations. Works independently, consistently following hygiene protocols."],bm:["Kurang pengetahuan asas tentang menu, resipi dan prosedur harian. Piawaian tidak konsisten.","Memahami menu, resipi dan prosedur standard. Bekerja dengan pengawasan minimal dengan kualiti yang konsisten.","Pemahaman kukuh tentang menu dan operasi. Bekerja secara bebas dengan piawaian tinggi."]}},
+    {id:"cm",en:"Communication",bm:"Komunikasi",w:0.175,d:{en:["Fails to communicate basic information to colleagues.","Demonstrates clear communication on routine work-related matters.","Excels in communication, proactively sharing important updates and ensuring colleagues are always well-informed."],bm:["Gagal menyampaikan maklumat asas kepada rakan sekerja.","Menunjukkan komunikasi yang jelas dalam hal-hal kerja rutin.","Cemerlang dalam komunikasi, berkongsi kemas kini penting secara proaktif."]}},
+    {id:"tw",en:"Teamwork",bm:"Kerja Berpasukan",w:0.175,d:{en:["Uncooperative; avoids shared duties and lacks cooperation with colleagues.","Works well with team members and follows instructions to ensure smooth daily operations.","Cooperates well and proactively takes on extra shared duties without being asked."],bm:["Tidak bekerjasama; mengelakkan tugas bersama.","Bekerjasama dengan ahli pasukan dan mengikut arahan untuk operasi harian yang lancar.","Bekerjasama dengan baik dan mengambil tugas tambahan secara proaktif tanpa diminta."]}},
+    {id:"ps",en:"Problem Solving",bm:"Penyelesaian Masalah",w:0.05,d:{en:["Struggles to handle operational issues. Relies heavily on supervision for normal tasks.","Resolves standard operational problems with guidance from the team leader.","Resolves daily issues independently and implements actions to prevent them from recurring."],bm:["Sukar menangani isu operasi. Bergantung sangat kepada pengawasan.","Menyelesaikan masalah operasi standard dengan bimbingan ketua pasukan.","Menyelesaikan isu harian secara bebas dan melaksanakan tindakan pencegahan."]}},
+    {id:"sd",en:"Self Discipline",bm:"Disiplin Diri",w:0.2,d:{en:["Frequently requires reminders about company rules, procedures, or punctuality.","Generally follows company rules and workplace standards while maintaining good attendance.","Consistently follows company rules with zero lateness, setting a perfect example for the crew."],bm:["Kerap memerlukan peringatan tentang peraturan syarikat atau ketepatan masa.","Umumnya mengikuti peraturan syarikat sambil mengekalkan kehadiran yang baik.","Sentiasa mengikuti peraturan syarikat dengan sifar kelewatan, menjadi contoh sempurna."]}},
+    {id:"rb",en:"Responsibility",bm:"Tanggungjawab",w:0.2,d:{en:["Needs frequent reminders to finish station tasks, or leaves work incomplete for the next shift.","Handles the assigned workload reliably and completes all daily station setups on time.","Consistently takes ownership of duties and can be relied upon to support operations without being prompted."],bm:["Memerlukan peringatan kerap untuk menyelesaikan tugasan stesen.","Mengendalikan beban kerja yang ditugaskan dengan boleh dipercayai dan menyiapkan semua tugasan tepat masa.","Sentiasa mengambil alih tanggungjawab tugasan dan boleh dipercayai tanpa perlu diprompt."]}},
+  ]}]},
+  NE2:{label:"Service / Kitchen Team Lead",sections:[{title:"Performance",isOp:false,criteria:[
+    {id:"jk",en:"Job Knowledge",bm:"Pengetahuan Kerja",w:0.12,d:{en:["Lacks basic knowledge of the menu, recipes, and daily procedures.","Understands the menu, recipes, and standard procedures and is able to work with minimal supervision.","Demonstrates strong knowledge of the menu and procedures and is able to work independently."],bm:["Kurang pengetahuan asas tentang menu, resipi dan prosedur harian.","Memahami menu, resipi dan prosedur standard dan mampu bekerja dengan pengawasan minimal.","Menunjukkan pengetahuan kukuh tentang menu dan prosedur serta mampu bekerja secara bebas."]}},
+    {id:"cm",en:"Communication",bm:"Komunikasi",w:0.12,d:{en:["Experiences difficulty communicating information clearly to others.","Conducts daily briefings and maintains clear communication with team members.","Excels in communication, keeps management and staff informed, and ensures smooth communication."],bm:["Sukar menyampaikan maklumat dengan jelas kepada orang lain.","Menjalankan taklimat harian dan mengekalkan komunikasi yang jelas dengan ahli pasukan.","Cemerlang dalam komunikasi, memastikan pengurusan dan kakitangan sentiasa dimaklumkan."]}},
+    {id:"tw",en:"Teamwork",bm:"Kerja Berpasukan",w:0.12,d:{en:["Uncooperative; avoids shared duties and shows a lack of cooperation with colleagues.","Works well with team members and follows instructions to ensure smooth daily operations.","Cooperates well, follows instructions, and proactively takes on extra shared duties."],bm:["Tidak bekerjasama; mengelakkan tugas bersama.","Bekerjasama dengan ahli pasukan dan mengikut arahan untuk operasi harian yang lancar.","Bekerjasama dengan baik dan mengambil tugas tambahan secara proaktif."]}},
+    {id:"ps",en:"Problem Solving",bm:"Penyelesaian Masalah",w:0.2,d:{en:["Struggles to handle operational problems. Relies heavily on supervision for normal tasks.","Resolves standard operational problems with guidance from the team leader.","Resolves daily issues independently and implements actions to prevent them from recurring."],bm:["Sukar menangani masalah operasi. Bergantung sangat kepada pengawasan.","Menyelesaikan masalah operasi standard dengan bimbingan ketua pasukan.","Menyelesaikan isu harian secara bebas dan melaksanakan tindakan pencegahan."]}},
+    {id:"ld",en:"Leadership",bm:"Kepimpinan",w:0.2,d:{en:["Struggles to provide basic guidance to the crew.","Guides the crew effectively through daily operations.","Demonstrates workplace integrity by leading through example, proactively guiding and motivating crew members."],bm:["Sukar memberikan bimbingan asas kepada kru.","Membimbing kru dengan berkesan melalui operasi harian.","Menunjukkan integriti di tempat kerja dengan memimpin melalui teladan dan memotivasi ahli kru."]}},
+    {id:"sd",en:"Self Discipline",bm:"Disiplin Diri",w:0.12,d:{en:["Frequently requires reminders about company rules, procedures, or punctuality.","Generally follows company rules and workplace standards while maintaining good attendance.","Consistently follows company rules with zero lateness, setting a perfect example."],bm:["Kerap memerlukan peringatan tentang peraturan syarikat atau ketepatan masa.","Umumnya mengikuti peraturan syarikat sambil mengekalkan kehadiran yang baik.","Sentiasa mengikuti peraturan syarikat dengan sifar kelewatan, menjadi contoh sempurna."]}},
+    {id:"rb",en:"Responsibility",bm:"Tanggungjawab",w:0.12,d:{en:["Needs frequent reminders to finish station tasks, or leaves work incomplete for the next shift.","Handles the assigned workload reliably and completes all daily tasks on time.","Consistently takes ownership of duties and can be relied upon without being prompted."],bm:["Memerlukan peringatan kerap untuk menyelesaikan tugasan stesen.","Mengendalikan beban kerja yang ditugaskan dengan boleh dipercayai dan menyiapkan semua tugasan tepat masa.","Sentiasa mengambil alih tanggungjawab tugasan dan boleh dipercayai tanpa perlu diprompt."]}},
+  ]}]},
+  NE3:{label:"Service / Kitchen Supervisor",sections:[
+    {title:"Section A: Behaviour & Conduct",isOp:false,criteria:[
+      {id:"jk",en:"Job Knowledge",bm:"Pengetahuan Kerja",w:0.075,d:{en:["Lacks the knowledge required to perform the job effectively.","Has the knowledge required to perform the job satisfactorily and shows willingness to learn.","Maintains a good understanding of job responsibilities, learns quickly, and actively pursues enhancement opportunities."],bm:["Kurang pengetahuan yang diperlukan untuk melaksanakan kerja dengan berkesan.","Mempunyai pengetahuan yang diperlukan untuk melaksanakan kerja dengan memuaskan.","Mengekalkan pemahaman yang baik tentang tanggungjawab kerja dan aktif mencari peluang penambahbaikan."]}},
+      {id:"cm",en:"Communication",bm:"Komunikasi",w:0.075,d:{en:["Experiences difficulty communicating information clearly to others.","Conducts daily briefings and maintains clear communication with team members.","Excels in communication, keeps management and staff consistently informed across all operational stations."],bm:["Sukar menyampaikan maklumat dengan jelas kepada orang lain.","Menjalankan taklimat harian dan mengekalkan komunikasi yang jelas dengan ahli pasukan.","Cemerlang dalam komunikasi, memastikan pengurusan dan kakitangan sentiasa dimaklumkan."]}},
+      {id:"ps",en:"Problem Solving",bm:"Penyelesaian Masalah",w:0.175,d:{en:["Struggles to independently resolve daily operational issues. Requires intervention from Superior.","Identifies and resolves operational issues independently using established company procedures.","Foresees and resolves operational issues independently while implementing sustainable solutions."],bm:["Sukar menyelesaikan isu operasi harian secara bebas. Memerlukan campur tangan daripada Penyelia.","Mengenal pasti dan menyelesaikan isu operasi secara bebas menggunakan prosedur syarikat.","Meramalkan dan menyelesaikan isu operasi secara bebas sambil melaksanakan penyelesaian yang mampan."]}},
+      {id:"tw",en:"Teamwork",bm:"Kerja Berpasukan",w:0.075,d:{en:["Uncooperative; avoids shared duties and shows a lack of cooperation with colleagues.","Works well with team members and follows instructions to ensure smooth daily operations.","Cooperates well, follows instructions, and proactively takes on extra shared duties."],bm:["Tidak bekerjasama; mengelakkan tugas bersama.","Bekerjasama dengan ahli pasukan dan mengikut arahan untuk operasi harian yang lancar.","Bekerjasama dengan baik dan mengambil tugas tambahan secara proaktif."]}},
+      {id:"cp",en:"Compliance",bm:"Pematuhan",w:0.125,d:{en:["Fails to maintain outlet compliance with health, safety, and brand standards.","Maintains outlet compliance with health, safety, and brand standards reliably.","Exceeds compliance standards by consistently maintaining the outlet in an audit-ready condition."],bm:["Gagal mengekalkan pematuhan outlet dengan piawaian kesihatan, keselamatan dan jenama.","Mengekalkan pematuhan outlet dengan piawaian kesihatan, keselamatan dan jenama secara boleh dipercayai.","Melebihi piawaian pematuhan dengan sentiasa mengekalkan outlet dalam keadaan sedia audit."]}},
+      {id:"ld",en:"Leadership",bm:"Kepimpinan",w:0.175,d:{en:["Struggles to lead the team, leaving the crew disconnected and resulting in poor service or low morale.","Supervises the shift effectively, ensuring the crew works well together to maintain quality service.","Leads the shift smoothly while actively mentoring the crew and creating a positive environment."],bm:["Sukar memimpin pasukan, menyebabkan kru tidak bersatu dan perkhidmatan yang lemah.","Menyelia syif dengan berkesan, memastikan kru bekerjasama untuk mengekalkan perkhidmatan berkualiti.","Memimpin syif dengan lancar sambil aktif membimbing kru dan mewujudkan persekitaran yang positif."]}},
+    ]},
+    {title:"Section B: Operational Results",isOp:true,criteria:[
+      {id:"op1",en:"Monthly Sales Target",bm:"Sasaran Jualan Bulanan",w:0.1,d:{en:["Falls below 95% of the assigned monthly target.","Achieves 95% – 100% of the assigned monthly target.","Achieves above 100% of the assigned monthly target."],bm:["Jatuh di bawah 95% daripada sasaran bulanan yang ditetapkan.","Mencapai 95% – 100% daripada sasaran bulanan yang ditetapkan.","Mencapai melebihi 100% daripada sasaran bulanan yang ditetapkan."]}},
+      {id:"op2",en:"COGS Management",bm:"Pengurusan Kos Makanan",w:0.1,d:{en:["Food cost is above 31%.","Food cost stays between 30% and 31%.","Food cost is kept below 30%."],bm:["Kos makanan melebihi 31%.","Kos makanan kekal antara 30% dan 31%.","Kos makanan dijaga di bawah 30%."]}},
+      {id:"op3",en:"Stock Ordering",bm:"Pemesanan Stok",w:0.1,d:{en:["Stock availability drops below 95%.","Maintains stock availability between 95% and 98%.","Maintains stock availability above 98%."],bm:["Ketersediaan stok jatuh di bawah 95%.","Mengekalkan ketersediaan stok antara 95% dan 98%.","Mengekalkan ketersediaan stok melebihi 98%."]}},
+    ]},
+  ]},
+};
+
+const save=(d)=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify(d));}catch(e){}};
+const load=()=>{try{const d=localStorage.getItem(SAVE_KEY);return d?JSON.parse(d):null;}catch(e){return null;}};
+const clear=()=>{try{localStorage.removeItem(SAVE_KEY);}catch(e){}};
+
+// ── Stage 1 carry-forward snapshot (separate from regular draft) ──────────────
+const S1_KEY = "nlsr_stage1_snapshot";
+const saveS1Snapshot=(d)=>{try{localStorage.setItem(S1_KEY,JSON.stringify(d));}catch(e){}};
+const loadS1Snapshot=()=>{try{const d=localStorage.getItem(S1_KEY);return d?JSON.parse(d):null;}catch(e){return null;}};
+const clearS1Snapshot=()=>{try{localStorage.removeItem(S1_KEY);}catch(e){}};
+const fmt=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—";
+
+// ── UI primitives ──
+const Shell=({ch})=><div style={{minHeight:"100vh",background:B.cream,fontFamily:"system-ui,-apple-system,sans-serif"}}>{ch}</div>;
+const Card=({ch,s={}})=><div style={{background:"#fff",border:`1px solid ${B.border}`,borderRadius:16,boxShadow:"0 2px 12px rgba(107,66,38,0.07)",...s}}>{ch}</div>;
+const Lbl=({t})=><p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:B.red,marginBottom:10}}>{t}</p>;
+const Btn=({onClick,disabled,ch,ghost})=>{
+  const base={width:"100%",fontWeight:700,padding:"14px 16px",borderRadius:16,fontSize:14,cursor:disabled?"not-allowed":"pointer",border:"none",outline:"none",transition:"transform 0.1s",WebkitAppearance:"none"};
+  const s=ghost
+    ?{...base,background:"#fff",border:`2px solid ${B.border}`,color:B.brown}
+    :disabled
+      ?{...base,background:"#e5e7eb",color:"#9ca3af"}
+      :{...base,background:`linear-gradient(135deg,${B.red},${B.crimson})`,color:"#fff",boxShadow:"0 6px 20px rgba(139,26,26,0.28)"};
+  return <button style={s} onClick={onClick} disabled={disabled} onTouchStart={()=>{}} >{ch}</button>;
+};
+
+
+// ── Signature Pad Component ───────────────────────────────────────────────────
+function SignaturePad({label, subLabel, stampName, stampRole, onSave, hasError, isBM}){
+  const canvasRef = React.useRef(null);
+  const [drawing, setDrawing]   = React.useState(false);
+  const [hasSig,  setHasSig]    = React.useState(false);
+  const [saved,   setSaved]     = React.useState(false);
+
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const src  = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const pos = getPos(e, canvas);
+    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+    setDrawing(true); setHasSig(true); setSaved(false);
+  };
+
+  const draw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx    = canvas.getContext("2d");
+    const pos    = getPos(e, canvas);
+    ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = "#1a1a2e";
+    ctx.lineTo(pos.x, pos.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+  };
+
+  const endDraw = (e) => { if(e) e.preventDefault(); setDrawing(false); };
+
+  const clearSig = () => {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    setHasSig(false); setSaved(false); onSave("");
+  };
+
+  const saveSig = () => {
+    const canvas = canvasRef.current;
+    const stamp  = document.createElement("canvas");
+    stamp.width  = canvas.width;
+    stamp.height = canvas.height + 38;
+    const sctx   = stamp.getContext("2d");
+    sctx.fillStyle = "#FFFFFF";
+    sctx.fillRect(0, 0, stamp.width, stamp.height);
+    sctx.drawImage(canvas, 0, 0);
+    sctx.fillStyle = "#E8DDD2";
+    sctx.fillRect(0, canvas.height, stamp.width, 1);
+    const now = new Date();
+    const ts  = now.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+              + "  " + now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+    sctx.fillStyle = "#6B4226"; sctx.font = "bold 11px Arial";
+    sctx.fillText(stampName, 10, canvas.height + 15);
+    sctx.fillStyle = "#9B8878"; sctx.font = "10px Arial";
+    sctx.fillText(stampRole + "   |   " + ts, 10, canvas.height + 30);
+    onSave(stamp.toDataURL("image/png"));
+    setSaved(true);
+  };
+
+  return (
+    <div>
+      <p style={{fontSize:12,fontWeight:700,color:"#6B4226",margin:"0 0 2px"}}>{label}</p>
+      <p style={{fontSize:11,color:"#9B8878",margin:"0 0 8px"}}>{subLabel}</p>
+      <div style={{position:"relative",border:"2px solid "+(hasError?"#F87171":saved?"#4ADE80":"#E8DDD2"),borderRadius:12,overflow:"hidden",background:"#FAFAFA",touchAction:"none"}}>
+        <canvas ref={canvasRef} width={600} height={160}
+          style={{display:"block",width:"100%",height:120,cursor:"crosshair",touchAction:"none"}}
+          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={endDraw} onMouseLeave={endDraw}
+          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={endDraw}/>
+        {!hasSig&&(
+          <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none",textAlign:"center"}}>
+            <p style={{fontSize:24,margin:"0 0 4px"}}>✍️</p>
+            <p style={{fontSize:11,color:"#C4B5A5",margin:0}}>{isBM?"Tandatangan di sini dengan jari anda":"Sign here using your finger"}</p>
+          </div>
+        )}
+        {saved&&(
+          <div style={{position:"absolute",top:6,right:8,background:"#DCFCE7",borderRadius:99,padding:"3px 10px",fontSize:10,fontWeight:700,color:"#15803D"}}>
+            ✓ {isBM?"Tersimpan":"Saved"}
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <button onClick={clearSig} style={{flex:1,padding:"9px 0",borderRadius:10,border:"1.5px solid #E8DDD2",background:"#fff",color:"#9B8878",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          🗑 {isBM?"Padam":"Clear"}
+        </button>
+        <button onClick={saveSig} disabled={!hasSig||saved}
+          style={{flex:2,padding:"9px 0",borderRadius:10,border:"none",
+            background:hasSig&&!saved?"linear-gradient(135deg,#8B1A1A,#C0392B)":"#e5e7eb",
+            color:hasSig&&!saved?"#fff":"#9ca3af",fontSize:12,fontWeight:700,
+            cursor:hasSig&&!saved?"pointer":"not-allowed"}}>
+          {saved?(isBM?"✓ Tandatangan Disimpan":"✓ Signature Saved"):(isBM?"Simpan Tandatangan":"Save Signature")}
+        </button>
+      </div>
+      {hasError&&<p style={{fontSize:11,color:"#DC2626",marginTop:5}}>⚠️ {isBM?"Sila tandatangan dan simpan":"Please sign and save before submitting"}</p>}
+    </div>
+  );
+}
+
+function App(){
+  const [scr,setScr]=useState("welcome");
+  const [L,setL]=useState("EN");
+  const [draft,setDraft]=useState(false);
+  const [kpi,setKpi]=useState(KPI);
+  const [aPin,setAPin]=useState("");
+  const [aOk,setAOk]=useState(false);
+  const [aErr,setAErr]=useState(false);
+  const [prof,setProf]=useState({name:"",id:"",outlet:"",appraiser:"",grade:"NE1",from:"",to:"",type:"Quarterly"});
+  const [rat,setRat]=useState({});
+  const [cmt,setCmt]=useState({});
+  const [step,setStep]=useState(0);
+  const [ap,setAp]=useState("");
+  const [str,setStr]=useState("");
+  const [agr,setAgr]=useState("");
+  const [pErr,setPErr]=useState(false); // kept for error compat
+  const [submissionStage,setSubmissionStage]=useState(1); // 1=self-assessment, 2=final signoff
+  const [s1Found,setS1Found]=useState(null);     // detected Stage 1 snapshot, or null
+  const [s1Prompted,setS1Prompted]=useState(false); // whether we've shown the prompt this session
+  const [done,setDone]=useState(false);
+  const [formTouched,setFormTouched]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const [subErr,setSubErr]=useState("");
+  const [empSigData,setEmpSigData]=useState("");    // employee signature base64
+  const [aprSigData,setAprSigData]=useState("");    // appraiser signature base64
+  const [empSigErr,setEmpSigErr]=useState(false);
+  const [aprSigErr,setAprSigErr]=useState(false);
+  const [settings,setSettings]=useState({outlets:FB_OUTLETS,appraisers:FB_APPRAISERS,emailRouting:[],loading:true,error:false});
+
+  const bm=L==="BM";
+
+  // Fetch live settings from Google Sheets on mount
+  useEffect(()=>{
+    // Try direct fetch first, then CORS proxy as fallback
+    const PROXY = "https://corsproxy.io/?"+encodeURIComponent(SETTINGS_CSV);
+
+    const processCSV = (text) => {
+      const rows = parseCSV(text);
+      const outlets = extractTable(rows,0,["code","name","brand","status"])
+        .filter(o=>o.code&&o.status&&o.status.trim().toLowerCase()==="active");
+      const appraisers = extractTable(rows,5,["name","outletCode","status"])
+        .filter(a=>a.name&&a.status&&a.status.trim().toLowerCase()==="active");
+      const emailRouting = extractTable(rows,9,["stage","toEmail","ccEmail"])
+        .filter(r=>r.stage&&r.toEmail);
+      setSettings({
+        outlets:      outlets.length>0     ? outlets      : FB_OUTLETS,
+        appraisers:   appraisers.length>0  ? appraisers   : FB_APPRAISERS,
+        emailRouting: emailRouting.length>0 ? emailRouting : [],
+        loading:false, error: outlets.length===0
+      });
+    };
+
+    // Try direct first (works when app is hosted)
+    fetch(SETTINGS_CSV, {cache:"no-cache"})
+      .then(r=>{ if(!r.ok) throw new Error("direct failed"); return r.text(); })
+      .then(processCSV)
+      .catch(()=>{
+        // Fallback: use CORS proxy (works when opened as local file)
+        fetch(PROXY, {cache:"no-cache"})
+          .then(r=>{ if(!r.ok) throw new Error("proxy failed"); return r.text(); })
+          .then(processCSV)
+          .catch(()=>{
+            setSettings({outlets:FB_OUTLETS,appraisers:FB_APPRAISERS,loading:false,error:true});
+          });
+      });
+  },[]);
+  useEffect(()=>{if(load())setDraft(true);},[]);
+  useEffect(()=>{const snap=loadS1Snapshot();if(snap)setS1Found(snap);},[]);
+
+  const g=kpi[prof.grade];
+  const all=g?g.sections.flatMap(s=>s.criteria):[];
+  const tot=all.length;
+  const cr=all[step];
+
+  const snap=(ex={})=>save({prof,rat,cmt,step,ap,str,agr,L,kpi,...ex});
+
+  const resume=()=>{
+    const d=load();if(!d)return;
+    if(d.prof)setProf(d.prof);if(d.rat)setRat(d.rat);if(d.cmt)setCmt(d.cmt);
+    if(d.step!==undefined)setStep(d.step);if(d.ap)setAp(d.ap);
+    if(d.str)setStr(d.str);if(d.agr)setAgr(d.agr);if(d.L)setL(d.L);if(d.kpi)setKpi(d.kpi);
+    setDraft(false);setScr("quiz");
+  };
+
+  // Load Stage 1 snapshot into the form as Stage 2 starting point
+  const loadS1IntoStage2=()=>{
+    if(!s1Found)return;
+    setProf(s1Found.prof||prof);
+    setRat(s1Found.rat||{});
+    setCmt(s1Found.cmt||{});
+    setStr(s1Found.str||"");
+    setAgr(s1Found.agr||"");
+    setAp(s1Found.ap||"");
+    setSubmissionStage(2);
+    setS1Prompted(true);
+    setCurrentStepZeroAndGo();
+  };
+  const setCurrentStepZeroAndGo=()=>{ setStep(0); setScr("quiz"); };
+  const skipS1AndStartBlank=()=>{ setS1Prompted(true); setStep(0); setScr("quiz"); };
+
+  // ── WELCOME ──
+  if(scr==="welcome") return <Shell ch={<div>
+    <div style={{background:`radial-gradient(ellipse at 60% 0%,#A52020,${B.red} 55%,#5C0F0F)`,padding:"56px 24px 40px",textAlign:"center",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:0,right:0,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,0.08)",transform:"translate(30%,-30%)"}}/>
+      <div style={{position:"absolute",bottom:0,left:0,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,0.06)",transform:"translate(-30%,30%)"}}/>
+      <div style={{width:64,height:64,borderRadius:18,background:"rgba(255,255,255,0.15)",border:"1.5px solid rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}}>🍚</div>
+      <p style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"rgba(255,200,200,0.9)",marginBottom:4}}>Stellar Signature · nasi lemak shop.</p>
+      <h1 style={{fontSize:26,fontWeight:900,color:"#fff",margin:"0 0 10px",lineHeight:1.2}}>Performance<br/>Appraisal</h1>
+      <p style={{fontSize:13,color:"rgba(255,220,220,0.85)",maxWidth:280,margin:"0 auto"}}>{bm?"Sistem penilaian yang mesra, jelas, dan memberi semangat untuk pasukan kita.":"A warm, clear, and encouraging review for every member of our team."}</p>
+    </div>
+    <div style={{padding:"20px 20px 40px"}}>
+      {draft&&<Card ch={<div style={{padding:16}}>
+        <p style={{fontSize:12,fontWeight:700,color:B.red,marginBottom:4}}>💾 {bm?"Draf tersimpan ditemui":"Saved draft found"}</p>
+        <p style={{fontSize:12,color:B.muted,marginBottom:12}}>{bm?"Ingin sambung dari mana anda tinggal?":"Would you like to continue where you left off?"}</p>
+        <Btn onClick={resume} ch={bm?"Sambung Draf →":"Resume Draft →"}/>
+        <button onClick={()=>{clear();setDraft(false);}} style={{display:"block",width:"100%",background:"none",border:"none",color:B.muted,fontSize:12,padding:"8px 0",cursor:"pointer"}}>{bm?"Mulakan semula":"Start fresh instead"}</button>
+      </div>} s={{marginBottom:12}}/>}
+
+      <Card ch={<div style={{padding:16}}>
+        <p style={{fontSize:12,fontWeight:700,color:B.brown,marginBottom:10}}>📱 {bm?"Sebelum anda mula":"Before you begin"}</p>
+        {(bm?["Gunakan telefon dan pelayar yang sama sepanjang penilaian ini.","Draf disimpan pada peranti ini sahaja — tidak disegerakkan ke peranti lain.","Jangan guna mod Inkognito / Peribadi — draf tidak akan tersimpan.","Elakkan kosongkan cache atau sejarah pelayar sehingga anda selesai.","Sebaiknya siapkan penilaian ini dalam satu sesi bersama penilai anda."]:["Use the same phone and same browser throughout this appraisal.","Draft is saved on this device only — it won't sync to another phone.","Do not use Incognito / Private mode — your draft won't be saved.","Avoid clearing browser history or cache until you've submitted.","Ideally, complete this in one sitting together with your appraiser."]).map((t,i)=>(
+          <div key={i} style={{display:"flex",gap:8,marginBottom:6}}>
+            <span style={{color:B.red,fontSize:12,flexShrink:0,marginTop:2}}>•</span>
+            <p style={{fontSize:12,color:B.muted,margin:0,lineHeight:1.5}}>{t}</p>
+          </div>
+        ))}
+      </div>} s={{marginBottom:12}}/>
+
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+        {!draft&&<Btn onClick={()=>setScr("setup")} ch={bm?"Mulakan Penilaian →":"Begin Appraisal →"}/>}
+        <Btn ghost onClick={()=>setScr("admin")} ch={`🔐 ${bm?"Akses Admin":"Admin Access"}`}/>
+      </div>
+      <div style={{textAlign:"center"}}>
+        <button onClick={()=>setL(bm?"EN":"BM")} style={{fontSize:12,fontWeight:600,background:B.kraft,color:B.brown,border:`1px solid ${B.border}`,borderRadius:99,padding:"8px 16px",cursor:"pointer"}}>{bm?"Switch to English":"Tukar ke Bahasa Melayu"}</button>
+      </div>
+    </div>
+  </div>}/>;
+
+  // ── ADMIN ──
+  if(scr==="admin"){
+    const opSec=kpi.NE3.sections.find(s=>s.isOp);
+    const opC=opSec?.criteria||[];
+    const opW=opC.reduce((s,c)=>s+c.w,0);
+    const wOk=Math.abs(opW-0.3)<0.001;
+    const upd=(idx,f,v)=>setKpi(prev=>{const u=JSON.parse(JSON.stringify(prev));const sec=u.NE3.sections.find(s=>s.isOp);
+      if(f==="w")sec.criteria[idx].w=parseFloat(v)||0;
+      else if(f==="en")sec.criteria[idx].en=v;
+      else if(f==="bm")sec.criteria[idx].bm=v;
+      else if(f.startsWith("den"))sec.criteria[idx].d.en[+f[3]]=v;
+      else if(f.startsWith("dbm"))sec.criteria[idx].d.bm[+f[3]]=v;
+      return u;});
+    return <Shell ch={<div>
+      <div style={{background:"#fff",borderBottom:`1px solid ${B.border}`,padding:"20px 20px 16px",position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",gap:12}}>
+        <button onClick={()=>setScr("welcome")} style={{width:32,height:32,borderRadius:"50%",background:B.kraft,border:"none",color:B.brown,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>
+        <div style={{flex:1}}>
+          <p style={{fontSize:11,color:B.muted,margin:0}}>NE3 Supervisor</p>
+          <h1 style={{fontSize:15,fontWeight:700,color:B.brown,margin:0}}>🔐 {bm?"Panel Admin":"Admin Panel"}</h1>
+        </div>
+        <button onClick={()=>setL(bm?"EN":"BM")} style={{fontSize:11,fontWeight:700,background:B.kraft,color:B.brown,border:`1px solid ${B.border}`,borderRadius:99,padding:"6px 12px",cursor:"pointer"}}>{bm?"EN":"BM"}</button>
+      </div>
+      <div style={{padding:"20px 20px 100px",display:"flex",flexDirection:"column",gap:12}}>
+        {!aOk?<Card ch={<div style={{padding:24,textAlign:"center"}}>
+          <p style={{fontSize:32,marginBottom:12}}>🔒</p>
+          <p style={{fontWeight:700,fontSize:15,color:B.brown,marginBottom:4}}>{bm?"PIN Admin Diperlukan":"Admin PIN Required"}</p>
+          <p style={{fontSize:12,color:B.muted,marginBottom:20}}>{bm?"Masukkan PIN untuk mengedit KPI Keputusan Operasi NE3":"Enter PIN to edit NE3 Operational Results KPIs"}</p>
+          <div style={{display:"flex",gap:10,justifyContent:"center",marginBottom:16}}>
+            {[0,1,2,3].map(i=><input key={i} type="tel" maxLength={1} inputMode="numeric"
+              style={{width:52,height:52,textAlign:"center",fontSize:22,fontWeight:700,borderRadius:12,border:`2px solid ${aErr?"#F87171":B.border}`,background:B.cream,color:B.brown,outline:"none"}}
+              value={aPin[i]||""} onChange={e=>{const v=e.target.value.replace(/\D/,"");let p=aPin.split("");p[i]=v;setAPin(p.join("").slice(0,4));setAErr(false);}}/>)}
+          </div>
+          {aErr&&<p style={{fontSize:12,color:"#DC2626",marginBottom:12}}>{bm?"PIN salah. Cuba lagi.":"Incorrect PIN. Try again."}</p>}
+          <Btn onClick={()=>{if(aPin===ADMIN_PIN){setAOk(true);setAErr(false);}else setAErr(true);}} ch={bm?"Buka Kunci 🔓":"Unlock 🔓"}/>
+          <p style={{fontSize:11,color:B.border,marginTop:10}}>Default PIN: 8888</p>
+        </div>}/>:<>
+          <Card ch={<div style={{padding:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <p style={{fontSize:12,fontWeight:700,color:B.brown,margin:0}}>⚖️ {bm?"Jumlah Wajaran Seksyen B":"Section B Total Weight"}</p>
+              <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,background:wOk?"#DCFCE7":"#FEE2E2",color:wOk?"#15803D":"#B91C1C"}}>{wOk?"✓ 30%":"⚠️ "+(opW*100).toFixed(1)+"%"}</span>
+            </div>
+            <div style={{height:6,borderRadius:99,background:B.kraft,overflow:"hidden"}}>
+              <div style={{height:"100%",borderRadius:99,width:`${Math.min(opW/0.3*100,100)}%`,background:wOk?`linear-gradient(90deg,${B.red},${B.crimson})`:"#F87171",transition:"width 0.3s"}}/>
+            </div>
+            {!wOk&&<p style={{fontSize:11,color:"#DC2626",marginTop:6}}>{bm?"Jumlah wajaran mesti bersamaan tepat 30%":"Total weight must equal exactly 30%"}</p>}
+          </div>}/>
+          {opC.map((c,i)=><Card key={c.id} ch={<div style={{padding:16,display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:B.red,margin:0}}>KPI #{i+1}</p>
+              {opC.length>1&&<button onClick={()=>setKpi(prev=>{const u=JSON.parse(JSON.stringify(prev));u.NE3.sections.find(s=>s.isOp).criteria.splice(i,1);return u;})}
+                style={{fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:99,background:"#FEE2E2",color:"#B91C1C",border:"none",cursor:"pointer"}}>🗑 {bm?"Padam":"Remove"}</button>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[["en","Name (EN)"],["bm","Nama (BM)"]].map(([f,l])=><div key={f}>
+                <label style={{fontSize:11,color:B.muted,display:"block",marginBottom:4}}>{l}</label>
+                <input style={{width:"100%",borderRadius:10,padding:"10px 12px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:13,outline:"none"}} value={c[f]} onChange={e=>upd(i,f,e.target.value)}/>
+              </div>)}
+            </div>
+            <div>
+              <label style={{fontSize:11,color:B.muted,display:"block",marginBottom:4}}>{bm?"Wajaran (cth: 0.10 = 10%)":"Weight (e.g. 0.10 = 10%)"}</label>
+              <input type="number" step="0.01" min="0.01" max="0.3" style={{width:"100%",borderRadius:10,padding:"10px 12px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:13,outline:"none"}} value={c.w} onChange={e=>upd(i,"w",e.target.value)}/>
+            </div>
+            {["🌱 Needs Help","🌳 On Track","⭐ Superstar"].map((lab,di)=><div key={di} style={{background:B.kraft,borderRadius:12,padding:12}}>
+              <p style={{fontSize:12,fontWeight:700,color:B.brown,marginBottom:8}}>{lab}</p>
+              {[["den","EN"],["dbm","BM"]].map(([pf,lng])=><div key={lng} style={{marginBottom:6}}>
+                <label style={{fontSize:11,color:B.muted,display:"block",marginBottom:3}}>Descriptor ({lng})</label>
+                <textarea style={{width:"100%",borderRadius:10,padding:"8px 10px",border:`1.5px solid ${B.border}`,background:"#fff",color:B.brown,fontSize:12,minHeight:50,outline:"none"}} value={c.d[lng.toLowerCase()][di]} onChange={e=>upd(i,`${pf}${di}`,e.target.value)}/>
+              </div>)}
+            </div>)}
+          </div>}/>)}
+          <button onClick={()=>setKpi(prev=>{const u=JSON.parse(JSON.stringify(prev));u.NE3.sections.find(s=>s.isOp).criteria.push({id:`op_${Date.now()}`,en:"New KPI",bm:"KPI Baru",w:0.1,d:{en:["Needs improvement.","Meets standard.","Exceeds standard."],bm:["Perlu penambahbaikan.","Memenuhi piawaian.","Melebihi piawaian."]}});return u;})}
+            style={{width:"100%",padding:14,borderRadius:16,border:`2px dashed ${B.red}`,background:"transparent",color:B.red,fontWeight:600,fontSize:14,cursor:"pointer"}}>
+            + {bm?"Tambah KPI Baru":"Add New KPI"}
+          </button>
+        </>}
+      </div>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`1px solid ${B.border}`,padding:"12px 20px"}}>
+        <Btn onClick={()=>{setScr("welcome");setAOk(false);setAPin("");}} ch={`✓ ${bm?"Simpan & Kembali":"Save & Return"}`}/>
+      </div>
+    </div>}/>;
+  }
+
+  // ── SETUP ──
+  if(scr==="setup") return <Shell ch={<div>
+    <div style={{background:"#fff",borderBottom:`1px solid ${B.border}`,padding:"20px 20px 16px",position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",gap:12}}>
+      <button onClick={()=>setScr("welcome")} style={{width:32,height:32,borderRadius:"50%",background:B.kraft,border:"none",color:B.brown,cursor:"pointer",fontSize:16}}>←</button>
+      <div style={{flex:1}}>
+        <p style={{fontSize:11,color:B.muted,margin:0}}>Stellar Signature</p>
+        <h1 style={{fontSize:15,fontWeight:700,color:B.brown,margin:0}}>{bm?"Maklumat Penilaian":"Review Details"}</h1>
+      </div>
+      <button onClick={()=>setL(bm?"EN":"BM")} style={{fontSize:11,fontWeight:700,background:B.kraft,color:B.brown,border:`1px solid ${B.border}`,borderRadius:99,padding:"6px 12px",cursor:"pointer"}}>{bm?"EN":"BM"}</button>
+    </div>
+    <div style={{padding:"20px 20px 100px",display:"flex",flexDirection:"column",gap:12}}>
+
+      {/* Stage 1 carry-forward detection prompt */}
+      {s1Found&&!s1Prompted&&(
+        <Card s={{border:"2px solid #FDE68A"}} ch={<div style={{padding:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <span style={{fontSize:22}}>📋</span>
+            <p style={{fontSize:14,fontWeight:800,color:"#92400E",margin:0}}>{bm?"Sambung dari Peringkat 1?":"Continue from Stage 1?"}</p>
+          </div>
+          <div style={{background:"#FFFBEB",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+            <p style={{fontSize:12,fontWeight:700,color:B.brown,margin:"0 0 2px"}}>{s1Found.prof?.name||"—"}</p>
+            <p style={{fontSize:11,color:B.muted,margin:0}}>{s1Found.prof?.grade||""} · {s1Found.prof?.outlet||""} · {s1Found.prof?.type||""}</p>
+            <p style={{fontSize:11,color:B.muted,margin:"2px 0 0"}}>{bm?"Dihantar":"Submitted"} {s1Found.savedAt||""}</p>
+          </div>
+          <p style={{fontSize:11,color:B.muted,marginBottom:12,lineHeight:1.5}}>
+            {bm?"Semua penilaian dan komen daripada Peringkat 1 akan diisi terlebih dahulu di bawah. Anda hanya perlu kemaskini apa yang berubah selepas perbincangan.":"All ratings and remarks from Stage 1 will be pre-filled below. You'll only need to update what changes after your discussion."}
+          </p>
+          <Btn onClick={loadS1IntoStage2} ch={`✓ ${bm?"Muatkan Jawapan Peringkat 1":"Load Stage 1 Answers"}`}/>
+          <button onClick={()=>setS1Prompted(true)} style={{display:"block",width:"100%",background:"none",border:"none",color:B.muted,fontSize:12,padding:"10px 0 0",cursor:"pointer"}}>{bm?"Mulakan Kosong":"Start Blank Instead"}</button>
+        </div>}/>
+      )}
+
+      <Card ch={<div style={{padding:20}}>
+        <Lbl t={`👤 ${bm?"Maklumat Pekerja":"Employee Information"}`}/>
+        {/* Employee Name */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,fontWeight:500,color:B.muted,display:"block",marginBottom:4}}>{bm?"Nama Pekerja":"Employee Name"}<span style={{color:B.red,marginLeft:3}}>*</span></label>
+          <input style={{width:"100%",borderRadius:12,padding:"12px 14px",border:`1.5px solid ${formTouched&&!prof.name?B.red:B.border}`,background:B.cream,color:B.brown,fontSize:14,outline:"none"}} placeholder="e.g. Ahmad bin Ali" value={prof.name} onChange={e=>setProf({...prof,name:e.target.value})}/>
+        </div>
+        {/* Employee ID */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,fontWeight:500,color:B.muted,display:"block",marginBottom:4}}>{bm?"ID Pekerja":"Employee ID"}</label>
+          <input style={{width:"100%",borderRadius:12,padding:"12px 14px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:14,outline:"none"}} placeholder="e.g. SS-0042" value={prof.id} onChange={e=>setProf({...prof,id:e.target.value})}/>
+        </div>
+        {/* Outlet — live dropdown */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,fontWeight:500,color:B.muted,display:"block",marginBottom:4}}>
+            {bm?"Cawangan":"Outlet / Branch"}<span style={{color:B.red,marginLeft:3}}>*</span>
+            {settings.loading&&<span style={{fontSize:10,color:B.muted,marginLeft:6}}>⏳ {bm?"Memuatkan...":"Loading..."}</span>}
+            {settings.error&&<span style={{fontSize:10,color:"#DC2626",marginLeft:6}}>⚠️ {bm?"Menggunakan senarai lalai":"Using default list"}</span>}
+          </label>
+          <select style={{width:"100%",borderRadius:12,padding:"12px 14px",border:`1.5px solid ${formTouched&&!prof.outlet?B.red:B.border}`,background:B.cream,color:prof.outlet?B.brown:B.muted,fontSize:14,outline:"none",appearance:"none",WebkitAppearance:"none",backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239B8878' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,backgroundRepeat:"no-repeat",backgroundPosition:"right 14px center"}}
+            value={prof.outlet} onChange={e=>{
+              setProf({...prof,outlet:e.target.value,appraiser:""});
+            }}>
+            <option value="">{bm?"-- Pilih Cawangan --":"-- Select Outlet --"}</option>
+            {settings.outlets.map(o=><option key={o.code} value={o.code}>{o.name} ({o.code})</option>)}
+          </select>
+        </div>
+        {/* Appraiser — filtered by selected outlet */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,fontWeight:500,color:B.muted,display:"block",marginBottom:4}}>
+            {bm?"Nama Penilai":"Appraiser Name"}<span style={{color:B.red,marginLeft:3}}>*</span>
+          </label>
+          <select style={{width:"100%",borderRadius:12,padding:"12px 14px",border:`1.5px solid ${formTouched&&!prof.appraiser?B.red:B.border}`,background:B.cream,color:prof.appraiser?B.brown:B.muted,fontSize:14,outline:"none",appearance:"none",WebkitAppearance:"none",backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239B8878' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,backgroundRepeat:"no-repeat",backgroundPosition:"right 14px center"}}
+            value={prof.appraiser} onChange={e=>setProf({...prof,appraiser:e.target.value})}
+            disabled={!prof.outlet}>
+            <option value="">{!prof.outlet?(bm?"-- Pilih cawangan dahulu --":"-- Select outlet first --"):(bm?"-- Pilih Penilai --":"-- Select Appraiser --")}</option>
+            {settings.appraisers
+              .filter(a=>a.outletCode===prof.outlet||a.outletCode==="ALL"||a.outletCode==="")
+              .map(a=><option key={a.name} value={a.name}>{a.name}</option>)}
+          </select>
+          {prof.outlet&&settings.appraisers.filter(a=>a.outletCode===prof.outlet||a.outletCode==="ALL"||a.outletCode==="").length===0&&(
+            <p style={{fontSize:11,color:"#DC2626",marginTop:4}}>⚠️ {bm?"Tiada penilai untuk cawangan ini. Semak tab Settings dalam Google Sheet.":"No appraisers found for this outlet. Check the Settings tab in Google Sheet."}</p>
+          )}
+        </div>
+      </div>}/>
+      <Card ch={<div style={{padding:20}}>
+        <Lbl t={`📅 ${bm?"Tempoh Penilaian":"Review Period"}`}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+          {["Probation","Quarterly","Annual"].map(t=><button key={t} onClick={()=>setProf({...prof,type:t})}
+            style={{padding:"10px 4px",borderRadius:12,border:`2px solid ${prof.type===t?B.red:B.border}`,background:prof.type===t?"#FFF5F5":B.cream,color:prof.type===t?B.red:B.muted,fontWeight:600,fontSize:12,cursor:"pointer"}}>
+            {t==="Probation"?(bm?"Percubaan":"Probation"):t==="Quarterly"?(bm?"Suku Tahun":"Quarterly"):(bm?"Tahunan":"Annual")}
+          </button>)}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[["from",bm?"Dari":"From"],["to",bm?"Hingga":"To"]].map(([k,l])=><div key={k}>
+            <label style={{fontSize:12,fontWeight:500,color:B.muted,display:"block",marginBottom:4}}>{l}<span style={{color:B.red,marginLeft:3}}>*</span></label>
+            <input type="date" style={{width:"100%",borderRadius:12,padding:"11px 12px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:13,outline:"none"}} value={prof[k]} onChange={e=>setProf({...prof,[k]:e.target.value})}/>
+          </div>)}
+        </div>
+      </div>}/>
+      <Card ch={<div style={{padding:20}}>
+        <Lbl t={`🏅 ${bm?"Gred Jawatan":"Job Grade"}`}/>
+        {Object.entries(kpi).map(([k,v])=><button key={k} onClick={()=>setProf({...prof,grade:k})}
+          style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",borderRadius:12,border:`2px solid ${prof.grade===k?B.red:B.border}`,background:prof.grade===k?"#FFF5F5":B.cream,color:prof.grade===k?B.red:B.brown,fontWeight:500,fontSize:14,cursor:"pointer",marginBottom:8}}>
+          <span><b>{k}</b> — {v.label}</span>
+          {prof.grade===k&&<span style={{color:B.red,fontWeight:700}}>✓</span>}
+        </button>)}
+      </div>}/>
+    </div>
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`1px solid ${B.border}`,padding:"12px 20px"}}>
+      {formTouched&&(!prof.name||!prof.outlet||!prof.appraiser||!prof.from||!prof.to)&&(
+        <div style={{background:"#FFF5F5",border:`1px solid #FECACA`,borderRadius:12,padding:"10px 14px",marginBottom:10}}>
+          <p style={{fontSize:12,color:B.red,margin:0,fontWeight:600}}>⚠️ {bm?"Sila lengkapkan semua medan bertanda *":"Please complete all fields marked with *"}</p>
+          <p style={{fontSize:11,color:B.muted,margin:"3px 0 0"}}>{bm?"Nama pekerja, cawangan, nama penilai, dan tarikh penilaian diperlukan.":"Employee name, outlet, appraiser name, and review dates are required."}</p>
+        </div>
+      )}
+      <Btn disabled={false} onClick={()=>{setFormTouched(true);if(!prof.name||!prof.outlet||!prof.appraiser||!prof.from||!prof.to)return;setStep(0);setScr("quiz");}} ch={bm?"Mulakan Soalan →":"Start Questions →"}/>
+    </div>
+  </div>}/>;
+
+  // ── QUIZ ──
+  if(scr==="quiz"){
+    const pct=((step+1)/tot)*100;
+    const sec=g.sections.find(s=>s.criteria.find(c=>c.id===cr.id));
+    const last=step===tot-1;
+    return <Shell ch={<div>
+      <div style={{background:"#fff",borderBottom:`1px solid ${B.border}`,padding:"16px 20px 12px",position:"sticky",top:0,zIndex:20}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:11,color:B.muted,margin:"0 0 2px"}}>{bm?"Langkah":"Step"} {step+1} {bm?"daripada":"of"} {tot} — <span style={{color:B.red}}>{sec?.title}</span></p>
+            <p style={{fontSize:14,fontWeight:700,color:B.brown,margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bm?cr.bm:cr.en}</p>
+          </div>
+          <div style={{display:"flex",gap:6,marginLeft:10,flexShrink:0}}>
+            <button onClick={()=>snap()} style={{fontSize:11,fontWeight:700,padding:"6px 10px",borderRadius:99,background:"#FFF5F5",color:B.red,border:`1px solid #FECACA`,cursor:"pointer"}}>💾 {bm?"Simpan":"Save"}</button>
+            <button onClick={()=>setL(bm?"EN":"BM")} style={{fontSize:11,fontWeight:700,padding:"6px 10px",borderRadius:99,background:B.kraft,color:B.brown,border:`1px solid ${B.border}`,cursor:"pointer"}}>{bm?"EN":"BM"}</button>
+          </div>
+        </div>
+        <div style={{height:6,borderRadius:99,background:B.kraft,overflow:"hidden"}}>
+          <div style={{height:"100%",borderRadius:99,width:`${pct}%`,background:`linear-gradient(90deg,${B.red},${B.crimson})`,transition:"width 0.4s"}}/>
+        </div>
+      </div>
+      <div style={{padding:"20px 20px 100px",display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{background:`linear-gradient(135deg,${B.red},#5C0F0F)`,borderRadius:18,padding:20,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:0,right:0,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,0.08)",transform:"translate(30%,-30%)"}}/>
+          <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,200,200,0.9)",marginBottom:8}}>Appraisal Question</p>
+          <h2 style={{fontSize:18,fontWeight:900,color:"#fff",margin:"0 0 8px",lineHeight:1.3}}>
+            {bm?`Bagaimana prestasi anda dalam "${cr.bm}" tempoh ini?`:`How would you rate your "${cr.en}" this review period?`}
+          </h2>
+          <p style={{fontSize:11,color:"rgba(255,200,200,0.8)",margin:0}}>{bm?`Wajaran: ${(cr.w*100).toFixed(0)}%`:`Weight: ${(cr.w*100).toFixed(0)}%`}</p>
+        </div>
+        {/* Stage 2 banner — shows this question was pre-filled from Stage 1 */}
+        {submissionStage===2&&s1Found?.rat?.[cr.id]&&(
+          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:-6}}>
+            <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,background:"#DCFCE7",color:"#15803D"}}>📥 {bm?"Pra-isi daripada Peringkat 1":"Pre-filled from Stage 1"}</span>
+          </div>
+        )}
+        {RC.map(r=>{
+          const sel=rat[cr.id]===r.value;
+          const wasS1Answer = submissionStage===2 && s1Found?.rat?.[cr.id]===r.value;
+          return <button key={r.value} onClick={()=>{const nr={...rat,[cr.id]:r.value};setRat(nr);snap({rat:nr});}}
+            style={{textAlign:"left",borderRadius:16,padding:16,border:`2px solid ${sel?r.selBorder:r.border}`,background:r.bg,boxShadow:sel?`0 0 0 3px ${r.selRing}`:"none",cursor:"pointer",outline:"none",WebkitAppearance:"none"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:22}}>{r.icon}</span>
+                <p style={{fontWeight:700,fontSize:14,color:r.text,margin:0}}>{r.value} — {bm?r.bm:r.en}</p>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                {wasS1Answer&&<span style={{fontSize:10,fontWeight:700,padding:"4px 8px",borderRadius:99,background:"#DCFCE7",color:"#15803D"}}>{bm?"Jwpn S1":"S1 Answer"}</span>}
+                {sel&&<span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,background:r.bbg,color:r.btxt}}>✓ {bm?"Dipilih":"Selected"}</span>}
+              </div>
+            </div>
+            <p style={{fontSize:12,lineHeight:1.5,color:sel?r.text:B.muted,margin:0}}>{cr.d[bm?"bm":"en"][r.value-1]}</p>
+          </button>;
+        })}
+        <Card ch={<div style={{padding:16}}>
+          <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:B.muted,marginBottom:8}}>💬 {bm?"Komen / Contoh Tambahan":"Additional Comments / Examples"}</p>
+          <div style={{position:"relative"}}>
+            <textarea style={{width:"100%",minHeight:88,borderRadius:12,padding:"12px 44px 12px 14px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:13,outline:"none",lineHeight:1.5}}
+              placeholder={bm?"Kongsi contoh atau pemerhatian spesifik...":"Share a specific example or observation..."}
+              value={cmt[cr.id]||""} onChange={e=>setCmt({...cmt,[cr.id]:e.target.value})}/>
+            <button style={{position:"absolute",bottom:10,right:10,width:32,height:32,borderRadius:"50%",background:"#FFF5F5",border:"none",color:B.red,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🎤</button>
+          </div>
+          <p style={{fontSize:11,color:B.muted,marginTop:4}}>{bm?"Ketik ikon mikrofon untuk Suara-ke-Teks":"Tap mic icon for Voice-to-Text"}</p>
+        </div>}/>
+      </div>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`1px solid ${B.border}`,padding:"12px 20px",display:"flex",gap:10}}>
+        <Btn ghost onClick={()=>{if(step>0)setStep(step-1);else setScr("setup");}} ch={`← ${bm?"Sebelum":"Prev"}`}/>
+        <Btn disabled={!rat[cr.id]} onClick={()=>{if(!rat[cr.id])return;snap();if(last)setScr("summary");else setStep(step+1);}} ch={last?(bm?"Semak Ringkasan 🎉":"View Summary 🎉"):`${bm?"Seterusnya":"Next"} →`}/>
+      </div>
+    </div>}/>;
+  }
+
+  // ── SUMMARY ──
+  const sA=g.sections.filter(s=>!s.isOp);
+  const sB=g.sections.filter(s=>s.isOp);
+
+  return <Shell ch={<div>
+    <div style={{background:"#fff",borderBottom:`1px solid ${B.border}`,padding:"20px 20px 14px",position:"sticky",top:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div>
+        <p style={{fontSize:11,color:B.muted,margin:0}}>{bm?"Ringkasan Penilaian":"Appraisal Summary"}</p>
+        <h1 style={{fontSize:15,fontWeight:700,color:B.brown,margin:0}}>{prof.name||"Team Member"}</h1>
+      </div>
+      <button onClick={()=>setL(bm?"EN":"BM")} style={{fontSize:11,fontWeight:700,background:B.kraft,color:B.brown,border:`1px solid ${B.border}`,borderRadius:99,padding:"6px 12px",cursor:"pointer"}}>{bm?"EN":"BM"}</button>
+    </div>
+    <p style={{fontSize:12,fontWeight:500,color:B.red,padding:"8px 20px 0"}}>{bm?"Tahniah atas usaha anda! 🌟":"Well done on completing your review! 🌟"}</p>
+
+    <div style={{padding:"12px 20px 120px",display:"flex",flexDirection:"column",gap:14}}>
+      {/* Profile */}
+      <div style={{background:`linear-gradient(135deg,${B.red},#5C0F0F)`,borderRadius:18,padding:20,position:"relative",overflow:"hidden"}}>
+        <div style={{position:"absolute",top:0,right:0,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.07)",transform:"translate(30%,-30%)"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <div style={{width:48,height:48,borderRadius:14,background:"rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:900,color:"#fff",flexShrink:0}}>{(prof.name||"?")[0].toUpperCase()}</div>
+          <div><p style={{fontWeight:900,fontSize:16,color:"#fff",margin:0}}>{prof.name||"—"}</p><p style={{fontSize:12,color:"rgba(255,220,220,0.85)",margin:0}}>{prof.grade} · {g.label}</p></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {[[bm?"Cawangan":"Outlet",prof.outlet||"—"],[bm?"Penilai":"Appraiser",prof.appraiser||"—"],[bm?"Jenis":"Type",prof.type],[bm?"Tempoh":"Period",`${fmt(prof.from)} – ${fmt(prof.to)}`]].map(([l,v])=>(
+            <div key={l} style={{background:"rgba(255,255,255,0.15)",borderRadius:10,padding:10}}>
+              <p style={{fontSize:10,color:"rgba(255,210,210,0.8)",margin:"0 0 2px"}}>{l}</p>
+              <p style={{fontSize:12,fontWeight:600,color:"#fff",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Section A */}
+      {sA.map(sec=><div key={sec.title}>
+        <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:B.red,margin:"4px 0 8px"}}>{sec.title}</p>
+        {sec.criteria.map(c=>{
+          const r=rat[c.id];const rc=r?RC[r-1]:null;
+          return <Card key={c.id} ch={<div style={{padding:16}}>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:rc?10:0}}>
+              <div style={{flex:1}}>
+                <p style={{fontSize:14,fontWeight:700,color:B.brown,margin:"0 0 2px"}}>{bm?c.bm:c.en}</p>
+                <p style={{fontSize:11,color:B.muted,margin:0}}>{bm?`Wajaran: ${(c.w*100).toFixed(0)}%`:`Weight: ${(c.w*100).toFixed(0)}%`}</p>
+              </div>
+              {rc?<span style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:99,background:rc.bbg,color:rc.btxt,flexShrink:0,whiteSpace:"nowrap"}}>{rc.icon} {bm?rc.bm:rc.en}</span>
+                :<span style={{fontSize:11,padding:"6px 12px",borderRadius:99,background:B.kraft,color:B.muted,flexShrink:0}}>{bm?"Tidak dinilai":"Not rated"}</span>}
+            </div>
+            {rc&&<div style={{background:rc.bg,border:`1.5px solid ${rc.border}`,borderRadius:12,padding:"10px 12px",marginBottom:cmt[c.id]?10:0}}>
+              <p style={{fontSize:12,lineHeight:1.5,color:rc.text,margin:0}}><b>{rc.icon} {bm?rc.bm:rc.en}:</b> {c.d[bm?"bm":"en"][(r||1)-1]}</p>
+            </div>}
+            {cmt[c.id]&&<div style={{background:B.kraft,border:`1.5px solid ${B.border}`,borderRadius:12,padding:"10px 12px"}}>
+              <p style={{fontSize:11,fontWeight:600,color:B.muted,margin:"0 0 3px"}}>💬 {bm?"Komen":"Remarks"}</p>
+              <p style={{fontSize:12,lineHeight:1.5,color:B.brown,margin:0}}>{cmt[c.id]}</p>
+            </div>}
+          </div>} s={{marginBottom:8}}/>;
+        })}
+      </div>)}
+
+      {/* Section B */}
+      {sB.length>0&&<div>
+        <p style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:B.red,margin:"4px 0 4px"}}>{sB[0].title}</p>
+        <p style={{fontSize:12,color:B.muted,margin:"0 0 8px"}}>{bm?"Keputusan akan dibincangkan bersama HR":"Results to be finalised with HR during discussion"}</p>
+        {sB[0].criteria.map(c=>{
+          const r=rat[c.id];const rc=r?RC[r-1]:null;
+          return <Card key={c.id} ch={<div style={{padding:16}}>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:rc?10:0}}>
+              <div style={{flex:1}}>
+                <p style={{fontSize:14,fontWeight:700,color:B.brown,margin:"0 0 2px"}}>{bm?c.bm:c.en}</p>
+                <p style={{fontSize:11,color:B.muted,margin:0}}>{bm?`Wajaran: ${(c.w*100).toFixed(0)}%`:`Weight: ${(c.w*100).toFixed(0)}%`}</p>
+              </div>
+              {rc?<span style={{fontSize:11,fontWeight:700,padding:"6px 12px",borderRadius:99,background:rc.bbg,color:rc.btxt,flexShrink:0,whiteSpace:"nowrap"}}>{rc.icon} {bm?rc.bm:rc.en}</span>
+                :<span style={{fontSize:11,padding:"6px 12px",borderRadius:99,background:B.kraft,color:B.muted,flexShrink:0}}>{bm?"Belum dinilai":"Not yet rated"}</span>}
+            </div>
+            {rc&&<div style={{background:rc.bg,border:`1.5px solid ${rc.border}`,borderRadius:12,padding:"10px 12px",marginBottom:cmt[c.id]?10:0}}>
+              <p style={{fontSize:12,lineHeight:1.5,color:rc.text,margin:0}}><b>{rc.icon} {bm?rc.bm:rc.en}:</b> {c.d[bm?"bm":"en"][(r||1)-1]}</p>
+            </div>}
+            {cmt[c.id]&&<div style={{background:B.kraft,border:`1.5px solid ${B.border}`,borderRadius:12,padding:"10px 12px"}}>
+              <p style={{fontSize:11,fontWeight:600,color:B.muted,margin:"0 0 3px"}}>💬 {bm?"Komen":"Remarks"}</p>
+              <p style={{fontSize:12,lineHeight:1.5,color:B.brown,margin:0}}>{cmt[c.id]}</p>
+            </div>}
+          </div>} s={{marginBottom:8}}/>;
+        })}
+        <div style={{background:"#FFF5F5",borderRadius:12,padding:"10px 16px",textAlign:"center",marginTop:4}}>
+          <p style={{fontSize:12,fontWeight:500,color:B.red,margin:0}}>🔒 {bm?"Skor keseluruhan akan ditentukan oleh HR selepas perbincangan":"Overall score to be determined by HR after discussion"}</p>
+        </div>
+      </div>}
+
+      {/* Feedback */}
+      <Card ch={<div style={{padding:20}}>
+        <Lbl t={`📝 ${bm?"Maklum Balas":"Feedback"}`}/>
+        {[[bm?"💪 Kekuatan":"💪 Strengths",str,setStr],[bm?"🌱 Kawasan Penambahbaikan":"🌱 Areas for Growth",agr,setAgr]].map(([l,v,sv])=>(
+          <div key={l} style={{marginBottom:12}}>
+            <label style={{fontSize:12,fontWeight:600,color:B.brown,display:"block",marginBottom:6}}>{l}</label>
+            <textarea style={{width:"100%",minHeight:70,borderRadius:12,padding:"12px 14px",border:`1.5px solid ${B.border}`,background:B.cream,color:B.brown,fontSize:13,outline:"none",lineHeight:1.5}} placeholder={bm?"Tulis di sini...":"Write here..."} value={v} onChange={e=>sv(e.target.value)}/>
+          </div>
+        ))}
+      </div>}/>
+
+      {/* Action Plan */}
+      <div style={{background:"linear-gradient(135deg,#FFF5F5,#FEE2E2)",border:`1.5px solid #FECACA`,borderRadius:18,padding:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><span style={{fontSize:20}}>🎯</span><p style={{fontSize:14,fontWeight:700,color:B.red,margin:0}}>{bm?"Matlamat untuk Penilaian Seterusnya":"Goal for Next Review"}</p></div>
+        <textarea style={{width:"100%",minHeight:80,borderRadius:12,padding:"12px 14px",border:`1.5px solid #FECACA`,background:"rgba(255,255,255,0.8)",color:B.brown,fontSize:13,outline:"none",lineHeight:1.5}}
+          placeholder={bm?"Apakah satu perkara yang akan anda fokuskan?":"What's the one thing you'll both commit to before the next review?"}
+          value={ap} onChange={e=>setAp(e.target.value)}/>
+      </div>
+
+      {/* Sign Off — Stage aware */}
+      {!done?<Card ch={<div style={{padding:20}}>
+
+        {/* Stage toggle */}
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          {[1,2].map(s=>(
+            <button key={s} onClick={()=>{setSubmissionStage(s);setEmpSigData("");setAprSigData("");setEmpSigErr(false);setAprSigErr(false);}}
+              style={{flex:1,padding:"9px 0",borderRadius:10,border:`2px solid ${submissionStage===s?B.red:B.border}`,
+                background:submissionStage===s?"#FFF5F5":"#fff",
+                color:submissionStage===s?B.red:B.muted,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              {s===1?(bm?"Peringkat 1 — Penilaian Diri":"Stage 1 — Self Assessment"):(bm?"Peringkat 2 — Penilaian Akhir":"Stage 2 — Final Sign-Off")}
+            </button>
+          ))}
+        </div>
+
+        {/* Stage description */}
+        {submissionStage===1?(
+          <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            <p style={{fontSize:12,fontWeight:700,color:"#92400E",margin:"0 0 3px"}}>📋 {bm?"Peringkat 1 — Hantar kepada Penilai":"Stage 1 — Submit to Appraiser"}</p>
+            <p style={{fontSize:11,color:"#B45309",margin:0,lineHeight:1.5}}>{bm?"Tandatangan pekerja diperlukan sahaja. Rekod ini akan dihantar kepada penilai untuk semakan sebelum perbincangan 1-on-1.":"Employee signature only required. This record will be sent to the appraiser for review before your 1-on-1 discussion."}</p>
+          </div>
+        ):(
+          <div style={{background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            <p style={{fontSize:12,fontWeight:700,color:"#15803D",margin:"0 0 3px"}}>✅ {bm?"Peringkat 2 — Pengesahan Akhir":"Stage 2 — Final Sign-Off"}</p>
+            <p style={{fontSize:11,color:"#15803D",margin:0,lineHeight:1.5}}>{bm?"Kedua-dua tandatangan diperlukan untuk menutup penilaian ini secara rasmi. Hantar selepas perbincangan 1-on-1 selesai.":"Both signatures required to officially close this appraisal. Submit after the 1-on-1 discussion is complete."}</p>
+          </div>
+        )}
+
+        <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"8px 12px",marginBottom:14}}>
+          <p style={{fontSize:11,color:"#92400E",margin:0}}>📅 {new Date().toLocaleDateString("en-GB",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</p>
+        </div>
+
+        <div style={{height:1,background:B.border,margin:"4px 0 16px"}}/>
+
+        {/* Employee signature — always required */}
+        <SignaturePad
+          label={`${submissionStage===1?"":"1. "}${bm?"Tandatangan Pekerja":"Employee Signature"}`}
+          subLabel={prof.name + (prof.id ? " · " + prof.id : "") + " · " + (prof.grade||"")}
+          stampName={prof.name||"Employee"}
+          stampRole={(prof.grade||"") + " · " + (prof.outlet||"")}
+          onSave={setEmpSigData}
+          hasError={empSigErr}
+          isBM={bm}
+        />
+
+        {/* Appraiser signature — Stage 2 only */}
+        {submissionStage===2&&(<>
+          <div style={{height:1,background:B.border,margin:"16px 0"}}/>
+          <SignaturePad
+            label={`2. ${bm?"Tandatangan Penilai":"Appraiser Signature"}`}
+            subLabel={(prof.appraiser||"Appraiser") + " · " + (prof.outlet||"")}
+            stampName={prof.appraiser||"Appraiser"}
+            stampRole={"Appraiser · " + (prof.outlet||"")}
+            onSave={setAprSigData}
+            hasError={aprSigErr}
+            isBM={bm}
+          />
+        </>)}
+
+        <div style={{height:1,background:B.border,margin:"16px 0 4px"}}/>
+        <div style={{marginTop:12}}><Btn onClick={()=>{
+          // Stage-aware validation
+          const empOk = empSigData.length > 0;
+          const aprOk = submissionStage===1 ? true : aprSigData.length > 0;
+          setEmpSigErr(!empOk);
+          setAprSigErr(submissionStage===2 ? aprSigData.length===0 : false);
+          if(!empOk || !aprOk) return;
+          // ── Build submission payload ────────────────────────────────────────
+          const now = new Date();
+          const ts  = now.toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+
+          // Score calculation: (weight/100) * (rating/3) * 5
+          const kpiRows = all.map(c=>{
+            const rating   = rat[c.id]||0;
+            const weighted = rating>0 ? (c.w)*(rating/3)*5 : 0;
+            const secObj   = g.sections.find(s=>s.criteria.find(x=>x.id===c.id));
+            const descriptorEN = rating>0 ? (c.d?.en?.[rating-1]||"") : "";
+            const descriptorBM = rating>0 ? (c.d?.bm?.[rating-1]||"") : "";
+            return {
+              section:    secObj?.title||"",
+              kpi:        c.en,
+              kpiBM:      c.bm,
+              weightPct:  Math.round(c.w*100),
+              rating:     rating,
+              maxRating:  3,
+              weightedScore: parseFloat(weighted.toFixed(4)),
+              remarks:    cmt[c.id]||"",
+              descriptor:   descriptorEN,
+              descriptorBM: descriptorBM
+            };
+          });
+
+          const totalScore = parseFloat(kpiRows.reduce((s,r)=>s+r.weightedScore,0).toFixed(3));
+          const getBand = s => {
+            if(s>=4.5)  return "⭐ Outstanding";
+            if(s>=4.0)  return "💪 Solid +";
+            if(s>=3.25) return "🌳 Solid -";
+            if(s>=2.0)  return "🌿 Developmental";
+            return "🌱 Unsatisfactory";
+          };
+
+          // Find email routing from settings
+          const route1 = settings.emailRouting?settings.emailRouting.find(r=>r.stage&&r.stage.includes("1")):null;
+          const toEmail  = route1?.toEmail  || "";
+          const ccEmail  = route1?.ccEmail  || "";
+
+          const payload = {
+            submissionStage: submissionStage,
+            stageLabel:      submissionStage===1?"Stage 1 - Self Assessment":"Stage 2 - Final Sign-Off",
+            timestamp:       ts,
+            employeeName:    prof.name,
+            employeeId:      prof.id,
+            outletCode:      prof.outlet,
+            appraiserName:   prof.appraiser,
+            jobGrade:        prof.grade,
+            gradeLabel:      g.label,
+            reviewType:      prof.type,
+            reviewFrom:      prof.from,
+            reviewTo:        prof.to,
+            totalScore:      totalScore,
+            performanceBand: getBand(totalScore),
+            strengths:       str,
+            areasForGrowth:  agr,
+            actionPlan:      ap,
+            signOffTime:     ts,
+            kpiDetail:       kpiRows,
+            toEmail:         toEmail,
+            ccEmail:         ccEmail,
+            replyTo:             "hr@stellarsignature.com",
+            employeeSignature:   empSigData,
+            appraiserSignature:  aprSigData,
+          };
+
+          // ── Fire to Apps Script ─────────────────────────────────────────────
+          const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHZGL95pTtJXwGsENx4lZGArMUDv51V19vxqttevuCPG2sCGmAbPaHd0HmceeYiyzlcQ/exec";
+          if(SCRIPT_URL.startsWith("https://script.google.com")){
+            setSubmitting(true);
+            fetch(SCRIPT_URL,{
+              method:"POST",
+              headers:{"Content-Type":"text/plain"},
+              body: JSON.stringify(payload)
+            })
+            .then(r=>r.json())
+            .then(res=>{
+              setSubmitting(false);
+              if(res.status==="ok"){
+                if(submissionStage===1){
+                  saveS1Snapshot({prof,rat,cmt,str,agr,ap,savedAt:ts});
+                } else {
+                  clearS1Snapshot();
+                }
+                setDone(true); clear(); setPErr(false); setEmpSigErr(false); setAprSigErr(false);
+              }
+              else { setSubErr("Server error: "+( res.message||"unknown")); }
+            })
+            .catch(()=>{
+              setSubmitting(false);
+              setSubErr("Could not reach server. Check your internet connection and try again.");
+            });
+          } else {
+            // Script URL not yet set — still complete locally so testing works
+            if(submissionStage===1){
+              saveS1Snapshot({prof,rat,cmt,str,agr,ap,savedAt:ts});
+            } else {
+              clearS1Snapshot();
+            }
+            setDone(true); clear(); setPErr(false); setEmpSigErr(false); setAprSigErr(false);
+          }
+        }} ch={submitting?(bm?"Menghantar...":"Submitting ⏳"):(bm?"Hantar ke HR 🚀":"Submit to HR 🚀")}/></div>
+        {subErr&&<div style={{marginTop:10,background:"#FEE2E2",border:"1px solid #FECACA",borderRadius:12,padding:"10px 14px"}}>
+          <p style={{fontSize:12,color:"#B91C1C",margin:0,fontWeight:600}}>⚠️ Submission Failed</p>
+          <p style={{fontSize:11,color:B.muted,margin:"3px 0 0"}}>{subErr}</p>
+          <button onClick={()=>setSubErr("")} style={{fontSize:11,color:B.red,background:"none",border:"none",cursor:"pointer",marginTop:4,padding:0}}>Dismiss & try again</button>
+        </div>}
+      </div>}/>:
+      <div style={{background:"linear-gradient(135deg,#FFF5F5,#FEE2E2)",border:`1.5px solid #FECACA`,borderRadius:18,padding:28,textAlign:"center"}}>
+        <p style={{fontSize:44,marginBottom:12}}>🎉</p>
+        <p style={{fontWeight:900,fontSize:18,color:B.red,marginBottom:4}}>{bm?"Berjaya Dihantar!":"Successfully Submitted!"}</p>
+        <p style={{fontSize:12,color:B.muted,lineHeight:1.5}}>{bm?"Penilaian telah dihantar ke HR. Terima kasih kerana mengambil bahagian dengan sepenuh hati.":"This appraisal has been sent to HR. Thank you for engaging thoughtfully."}</p>
+        <p style={{fontSize:11,color:B.border,marginTop:12}}>{prof.name} · {prof.grade} · {prof.outlet}</p>
+      </div>}
+    </div>
+
+    {!done&&<div style={{position:"fixed",bottom:0,left:0,right:0,background:"#fff",borderTop:`1px solid ${B.border}`,padding:"12px 20px"}}>
+      <Btn ghost onClick={()=>{setStep(tot-1);setScr("quiz");}} ch={`← ${bm?"Kembali Edit Jawapan":"Back to Edit Answers"}`}/>
+    </div>}
+  </div>}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
